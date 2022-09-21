@@ -1,5 +1,18 @@
-import { createContext, ReactElement, ReactNode, useState } from "react";
+import { differenceInSeconds } from "date-fns";
+import {
+  createContext,
+  ReactNode,
+  useEffect,
+  useReducer,
+  useState,
+} from "react";
 import { v4 as uuidv4 } from "uuid";
+import {
+  addNewCycleAction,
+  interruptCurrentCycleAction,
+  markCurrentCycleAsFinishedAction,
+} from "../reducers/cycles/actions";
+import { cyclesReducer } from "../reducers/cycles/reducers";
 
 interface Cycle {
   id: string;
@@ -33,22 +46,39 @@ interface CycleContextProviderProps {
 export const CyclesContext = createContext({} as CyclesContextType);
 
 export function CyclesContextProvider({ children }: CycleContextProviderProps) {
-  const [amountSecondPassed, setAmountSecondPassed] = useState(0);
-  const [cycles, SetCycles] = useState<Cycle[]>([]);
-  const [activeCycleId, setActiveCycleId] = useState<string | null>(null);
+  const [cyclesState, dispatch] = useReducer(
+    cyclesReducer,
+    {
+      cycles: [],
+      activeCycleId: null,
+    },
+    () => {
+      const storedStateJson = localStorage.getItem(
+        "@ignite-pomodoro:cycles-state-1.0.0"
+      );
+
+      if (storedStateJson) {
+        return JSON.parse(storedStateJson);
+      }
+    }
+  );
+
+  const { cycles, activeCycleId } = cyclesState;
   const activeCycle = cycles.find((cycle) => cycle.id === activeCycleId);
+  const [amountSecondPassed, setAmountSecondPassed] = useState(() => {
+    if (activeCycle) {
+      return differenceInSeconds(new Date(), new Date(activeCycle.startDate));
+    }
+    return 0;
+  });
+
+  useEffect(() => {
+    const stateJSON = JSON.stringify(cyclesState);
+    localStorage.setItem("@ignite-pomodoro:cycles-state-1.0.0", stateJSON);
+  }, [cyclesState]);
 
   function markCurrentCycleAsFinished() {
-    SetCycles((state) =>
-      state.map((cycle) => {
-        if (cycle.id === activeCycleId) {
-          return { ...cycle, finishedDate: new Date() };
-        } else {
-          return cycle;
-        }
-      })
-    );
-    setActiveCycleId(null);
+    dispatch(markCurrentCycleAsFinishedAction());
   }
 
   function setSecondsPassed(seconds: number) {
@@ -63,23 +93,13 @@ export function CyclesContextProvider({ children }: CycleContextProviderProps) {
       task: data.task,
       startDate: new Date(),
     };
-    SetCycles((state) => [...state, newCycle]);
-    setActiveCycleId(id);
+    dispatch(addNewCycleAction(newCycle));
+
     setAmountSecondPassed(0);
-    //reset();
   }
 
   function interruptCurrentCycle() {
-    SetCycles((state) =>
-      state.map((cycle) => {
-        if (cycle.id === activeCycleId) {
-          return { ...cycle, interruptedDate: new Date() };
-        } else {
-          return cycle;
-        }
-      })
-    );
-    setActiveCycleId(null);
+    dispatch(interruptCurrentCycleAction());
   }
 
   return (
